@@ -1,4 +1,4 @@
-# Retail Sales Analytics - SQL Portfolio Project
+# Sales Analytics - SQL Portfolio Project
 
 > Comprehensive SQL analytics showcasing exploratory data analysis, advanced analytical techniques, customer and product performance reporting using PostgreSQL
 
