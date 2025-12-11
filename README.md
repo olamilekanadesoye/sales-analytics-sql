@@ -13,7 +13,6 @@
 - [Project Structure](#-project-structure)
 - [Key Analyses](#-key-analyses)
 - [Technical Skills](#-technical-skills-demonstrated)
-- [Key Findings](#-key-findings)
 - [Future Enhancements](#-future-enhancements)
 - [Contact](#-contact)
 
@@ -235,30 +234,6 @@ sales-analytics-sql/
 
 ---
 
-## Key Findings
-
-### **Revenue Insights**
-- **25% Month-over-Month Growth** in Q3 2024 during peak season
-- **Top 20% of customers generate 65% of revenue** (Pareto principle validated)
-- **Country X leads** with 35% of total revenue
-
-### **Customer Insights**
-- **VIP segment** (12+ months, $5K+ spend) shows **3.2x higher lifetime value** than Regular customers
-- **Customer acquisition accelerated by 18%** in recent quarter
-- **Age group 35-44** demonstrates highest average spending at $X,XXX
-
-### **Product Insights**
-- **Category A** contributes **42% of total revenue**
-- **Bottom 10% products** account for only **2% of sales** - candidates for discontinuation
-- **Premium products** ($500+) show **highest profit margins** at XX%
-
-### **Operational Insights**
-- **Average order fulfillment time:** X days
-- **Customer reorder rate:** XX% within 90 days
-- **Products with maintenance needs** show **lower customer satisfaction**
-
----
-
 ## Future Enhancements
 
 - [ ] Add predictive analytics (customer churn probability)
@@ -312,7 +287,7 @@ LinkedIn: [linkedin.com/in/myprofile](https://www.linkedin.com/public-profile/se
 
 ## Acknowledgments
 
-- Thanks to Baraa Khatib Salkini for his insightful tutorials on SQL
+- Thanks to Baraa Khatib Salkini for his insightful tutorials on SQL 
 
 ---
 
