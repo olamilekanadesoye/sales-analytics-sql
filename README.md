@@ -196,14 +196,14 @@ sales-analytics-sql/
 - Customer aggregation: summarizes key metrics at the customer level
 - Result transformation: calculate KPIs and apply business rule
 
-[View Customer Reports](03-customer-reports/)
+[View Customer Report](03-customer-report/)
 
 #### **Product Performance Report**
 - Base query: retrieve core columns from tables
 - Product aggregation: summarizes key metrics at the product level
 - Result transformation: calculate KPIs and apply business rule
 
-[View Product Reports](04-product-reports/)
+[View Product Report](04-product-report/)
 
 ---
 
