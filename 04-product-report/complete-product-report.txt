@@ -1,0 +1,97 @@
+/*
+=================================================================================
+Product Report
+=================================================================================
+Purpose:
+	- This report consolidates key product metrics and behaviours
+Highlights:
+	1. Gathers essential fields such as product name, category, subcategory, and cost
+	2. Segments products by revenue to identify High performers, Mid-range or Low performers
+	3. Aggregates product-level metrics:
+		- total orders
+		- total sales
+		- total quantity purchased
+		- total products 
+		- lifespan (in months)
+	4. Calculate valuable KPIs:
+		- recency (months since last order)
+		- average order revenue
+		- average monthly revenue
+=================================================================================
+*/
+CREATE OR REPLACE VIEW gold.report_products AS 
+WITH base_query AS (
+/*-------------------------------------------------------------------------------
+1) Base Query: Retrieve core columns from tables
+---------------------------------------------------------------------------------*/
+	SELECT
+		f.order_number,
+		f.customer_key,
+		f.order_date,
+		f.sales_amount,
+		f.quantity,
+		f.product_key,
+		p.product_name,
+		p.category,
+		p.subcategory,
+		p.cost
+	FROM gold.fact_sales f
+	LEFT JOIN gold.dim_products p
+		ON f.product_key = p.product_key
+	WHERE order_date IS NOT NULL -- only consider valid sales dates
+),
+product_aggregation AS(
+/*-------------------------------------------------------------------------------
+2) Product Aggregation: Summarizes key metrics at the product level
+---------------------------------------------------------------------------------*/
+	SELECT 
+		product_key,
+		product_name,
+		category,
+		subcategory,
+		cost,
+		COUNT(DISTINCT order_number) AS total_orders,
+		SUM(sales_amount) AS total_revenue,
+		SUM(quantity) AS total_quantity,
+		COUNT(DISTINCT customer_key) AS total_customers,
+		MAX(order_date) AS last_order_date,
+			 (EXTRACT(YEAR FROM AGE(MAX(order_date), MIN(order_date))) * 12 +
+		         EXTRACT(MONTH FROM AGE(MAX(order_date), MIN(order_date)))) AS lifespan
+	FROM base_query
+	GROUP BY product_key,
+		product_name,
+		category,
+		subcategory,
+		cost
+)
+/*-------------------------------------------------------------------------------
+3) Result Transformation: Calculate KPIs and apply business rules
+---------------------------------------------------------------------------------*/
+SELECT
+		product_key,
+		product_name,
+		category,
+		subcategory,
+		cost,
+		total_orders,
+		total_revenue,
+		CASE
+			WHEN total_revenue > 50000 THEN 'High-performer'
+			WHEN total_revenue >= 10000 THEN 'Mid-range'
+			ELSE 'Low-performer'
+		END AS product_segment,
+		total_quantity,
+		total_customers,
+		lifespan,
+		-- recency (months since last order)
+		(EXTRACT(YEAR FROM AGE(CURRENT_DATE,last_order_date)) * 12 +
+		EXTRACT(MONTH FROM AGE(CURRENT_DATE,last_order_date))) AS recency,
+		-- average order revenue (AOR)
+		CASE WHEN total_orders = 0 THEN 0
+			ELSE ROUND(total_revenue / total_orders, 2)
+		END AS average_order_revenue,
+		-- average monthly revenue
+		CASE WHEN lifespan = 0 THEN 0			
+			ELSE ROUND(total_revenue / lifespan, 2)
+		END AS average_monthly_revenue
+FROM product_aggregation;

@@ -1,0 +1,270 @@
+/*
+================================================================================
+SALES DATA ANALYSIS QUERIES
+================================================================================
+Purpose: Comprehensive analysis of sales data including date ranges, customer 
+         demographics, product performance, and revenue metrics
+Database: Gold layer (data warehouse star schema)
+Tables Used:
+    - gold.fact_sales: Fact table containing sales transactions
+    - gold.dim_customers: Customer dimension table
+    - gold.dim_products: Product dimension table
+Tool Used : PostgreSQL */
+
+/*
+================================================================================
+SECTION 1: Database EXPLORATION
+================================================================================
+Purpose: Explore allobeject in the database */
+
+-- Explore all objects in the database
+SELECT 
+    * 
+FROM INFORMATION_SCHEMA.TABLES;
+
+/*
+================================================================================
+SECTION 2: Dimensions EXPLORATION
+================================================================================
+Purpose: Identifying the unique values(or categories) in each dimension */
+
+--Explore all countries our customers come from
+SELECT DISTINCT country FROM gold.dim_customers;
+
+--Explore all categories "The major Division"
+SELECT DISTINCT category, subcategory, product_name FROM gold.dim_products
+ORDER BY 1,2,3;
+ 
+/*
+================================================================================
+SECTION 3: DATE EXPLORATION
+================================================================================
+Purpose: Understand the temporal scope of the sales data
+*/
+
+-- Calculate the date range of sales data and total years of operation
+-- Returns: First order date, last order date, and years between them
+SELECT 
+    MIN(order_date) AS first_order,
+    MAX(order_date) AS last_order,
+    EXTRACT(YEAR FROM AGE(MAX(order_date), MIN(order_date))) AS years_of_sales
+FROM gold.fact_sales;
+
+-- Determine customer age demographics
+-- Returns: The oldest and youngest customer ages in the database
+SELECT
+    MAX(age_years) AS oldest_age,
+    MIN(age_years) AS youngest_age
+FROM ( 
+    SELECT
+        first_name,
+        last_name,
+        -- Calculate age in years from birthdate to current date
+        EXTRACT(YEAR FROM AGE(CURRENT_DATE, birthdate)) AS age_years
+    FROM gold.dim_customers
+);
+
+/*
+================================================================================
+SECTION 4: KEY BUSINESS METRICS EXPLORATION
+================================================================================
+Purpose: Calculate individual KPIs for business performance monitoring
+*/
+
+-- Total revenue generated across all sales transactions
+SELECT 
+    SUM(sales_amount) AS total_sales 
+FROM gold.fact_sales;
+
+-- Total number of items/units sold across all orders
+SELECT 
+    SUM(quantity) AS total_sold_items 
+FROM gold.fact_sales;
+
+-- Average price point per item sold (rounded to nearest whole number)
+SELECT 
+    ROUND(AVG(price)) AS avg_selling_price 
+FROM gold.fact_sales;
+
+-- Count of unique orders placed (distinct order numbers)
+SELECT 
+    COUNT(DISTINCT order_number) AS total_orders 
+FROM gold.fact_sales;
+
+-- Total number of unique products in the product catalog
+SELECT 
+    COUNT(DISTINCT product_number) AS total_products 
+FROM gold.dim_products;
+
+-- Total number of customers in the customer database
+SELECT 
+    COUNT(customer_key) AS total_customers 
+FROM gold.dim_customers;
+
+-- Count of customers who have made at least one purchase
+-- Note: This excludes customers who registered but never ordered
+SELECT 
+    COUNT(DISTINCT customer_key) AS total_ordering_customers 
+FROM gold.fact_sales;
+
+/*
+================================================================================
+SECTION 5: CONSOLIDATED BUSINESS METRICS REPORT
+================================================================================
+Purpose: Generate a unified report displaying all key business metrics in a 
+         standardized format (measure name and value pairs)
+Output: Single result set with all KPIs for dashboard or reporting purposes
+*/
+
+SELECT 
+    'Total_sales' AS Measure_name, 
+    SUM(sales_amount) AS Measure_value 
+FROM gold.fact_sales
+UNION ALL
+SELECT 
+    'Total_sold_items' AS Measure_name, 
+    SUM(quantity) AS Measure_value 
+FROM gold.fact_sales
+UNION ALL
+SELECT 
+    'Avg_selling_price' AS Measure_name, 
+    ROUND(AVG(price)) AS Measure_value 
+FROM gold.fact_sales
+UNION ALL
+SELECT 
+    'Total_orders' AS Measure_name, 
+    COUNT(DISTINCT order_number) AS Measure_value 
+FROM gold.fact_sales
+UNION ALL
+SELECT 
+    'Total_products' AS Measure_name, 
+    COUNT(DISTINCT product_number) AS Measure_value 
+FROM gold.dim_products
+UNION ALL
+SELECT 
+    'Total_customers' AS Measure_name, 
+    COUNT(customer_key) AS Measure_value 
+FROM gold.dim_customers
+UNION ALL
+SELECT 
+    'Total_ordering_customers' AS Measure_name, 
+    COUNT(DISTINCT customer_key) AS Measure_value 
+FROM gold.fact_sales;
+
+/*
+================================================================================
+SECTION 6: MAGNITUDE ANALYSIS (AGGREGATION BY DIMENSIONS)
+================================================================================
+Purpose: Break down key metrics by various business dimensions to identify 
+         patterns and opportunities
+*/
+
+-- Customer distribution by geographic location
+-- Returns: Count of customers per country, sorted by highest concentration
+SELECT 
+    country,
+    COUNT(customer_key) AS total_customers
+FROM gold.dim_customers
+GROUP BY country
+ORDER BY total_customers DESC;
+
+-- Customer distribution by gender demographic
+-- Returns: Count of customers per gender, sorted by largest segment
+SELECT 
+    gender,
+    COUNT(customer_key) AS total_customers
+FROM gold.dim_customers
+GROUP BY gender
+ORDER BY total_customers DESC;
+
+-- Product catalog composition by category
+-- Returns: Count of products in each category
+-- Note: COALESCE handles NULL categories, replacing with 'n/a'
+SELECT 
+    COALESCE(category, 'n/a') AS category,
+    COUNT(product_number) AS total_products
+FROM gold.dim_products
+GROUP BY category
+ORDER BY total_products DESC;
+
+-- Average product cost by category
+-- Returns: Mean cost per category for cost analysis and pricing strategy
+SELECT
+    COALESCE(category, 'n/a') AS category,
+    AVG(cost) AS average_costs
+FROM gold.dim_products
+GROUP BY category
+ORDER BY average_costs DESC;
+
+-- Revenue performance by product category
+-- Returns: Total sales amount generated per product category
+-- Business use: Identify highest-grossing product lines
+SELECT
+    p.category,
+    SUM(f.sales_amount) AS total_revenue
+FROM gold.fact_sales f
+    LEFT JOIN gold.dim_products p
+        ON p.product_key = f.product_key
+GROUP BY p.category;
+
+-- Revenue contribution by individual customer
+-- Returns: Total spending per customer, ordered from highest to lowest
+-- Business use: Identify VIP customers and high-value segments
+-- Note: NULLIF prevents empty strings when first/last name are both null
+SELECT
+    c.customer_key,
+    NULLIF(c.first_name || ' ' || c.last_name, '') AS customer_name,
+    SUM(f.sales_amount) AS total_revenue
+FROM gold.fact_sales f
+    LEFT JOIN gold.dim_customers c
+        ON f.customer_key = c.customer_key
+GROUP BY c.customer_key, customer_name
+ORDER BY total_revenue DESC;
+
+-- Sales volume distribution across countries
+-- Returns: Total quantity of items sold per country
+-- Business use: Identify markets with highest product demand
+SELECT
+    c.country,
+    SUM(f.quantity) AS total_sold_items
+FROM gold.fact_sales f
+    LEFT JOIN gold.dim_customers c
+        ON f.customer_key = c.customer_key
+GROUP BY c.country
+ORDER BY total_sold_items DESC;
+
+/*
+================================================================================
+SECTION 7: RANKING ANALYSIS (TOP AND BOTTOM PERFORMERS)
+================================================================================
+Purpose: Identify best and worst performing products for strategic decisions
+*/
+
+-- Top 5 products by revenue generation
+-- Returns: Product details and total revenue for top revenue generators
+-- Business use: Focus marketing and inventory on bestsellers
+SELECT
+    p.product_key,
+    p.product_name,
+    SUM(f.sales_amount) AS total_revenue
+FROM gold.fact_sales f
+    LEFT JOIN gold.dim_products p
+        ON f.product_key = p.product_key
+GROUP BY p.product_key, p.product_name
+ORDER BY total_revenue DESC
+LIMIT 5;
+
+-- Bottom 5 products by units sold
+-- Returns: Product details and total quantity for worst performers
+-- Business use: Consider discontinuation or promotion of slow-moving inventory
+SELECT
+    p.product_key,
+    p.product_name,
+    SUM(f.quantity) AS total_items_sold
+FROM gold.fact_sales f
+    LEFT JOIN gold.dim_products p
+        ON f.product_key = p.product_key
+GROUP BY p.product_key, p.product_name
+ORDER BY total_items_sold ASC
+LIMIT 5;
+

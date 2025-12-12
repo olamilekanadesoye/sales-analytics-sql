@@ -1,0 +1,388 @@
+/*
+===========================================================================================================
+ADVANCED SALES ANALYTICS - COMPREHENSIVE ANALYSIS
+===========================================================================================================
+Purpose: Complete analytical framework covering time trends, cumulative metrics,
+         performance benchmarking, revenue composition, and customer segmentation
+Database: Gold layer (data warehouse star schema)
+Tool: PostgreSQL
+===========================================================================================================
+*/
+
+/*
+===========================================================================================================
+SECTION 1: CHANGE OVER TIME ANALYSIS
+===========================================================================================================
+Purpose: Track business performance trends and identify growth patterns
+*/
+
+-- Month-over-Month Sales Growth Rate
+-- Calculate monthly sales revenue and percentage change from previous month
+-- Business use: Identify growth trends, seasonal patterns, and performance anomalies
+SELECT
+    *,
+    ROUND(((current_total_revenue::numeric) - previous_month_revenue) / previous_month_revenue * 100, 2) AS sales_growth_rate
+FROM (
+    SELECT
+        *,
+        LAG(current_total_revenue, 1) OVER (ORDER BY month_) AS previous_month_revenue
+    FROM (
+        SELECT
+            DATE_TRUNC('month', order_date)::date AS month_,
+            SUM(sales_amount) AS current_total_revenue
+        FROM gold.fact_sales
+        WHERE order_date IS NOT NULL
+        GROUP BY month_
+    )
+);
+
+-- Customer Acquisition Trend
+-- Analyze new customer registrations by month and identify acquisition acceleration/deceleration
+-- Business use: Measure marketing effectiveness and customer growth trajectory
+SELECT
+    *,
+    ROUND(((current_month_total_cust::numeric - prev_month_total_cust) / prev_month_total_cust * 100), 2) AS acquisition_rate
+FROM (
+    SELECT
+        month_,
+        total_customers AS current_month_total_cust,
+        LAG(total_customers, 1) OVER (ORDER BY month_) AS prev_month_total_cust
+    FROM (
+        SELECT
+            DATE_TRUNC('month', create_date)::date AS month_,
+            COUNT(customer_key) AS total_customers
+        FROM gold.dim_customers
+        GROUP BY month_
+    )
+)
+ORDER BY month_;
+
+-- Rolling 3-Month Average Sales
+-- Calculate a rolling 3-month average of sales to smooth out seasonal fluctuations
+-- Business use: Identify underlying trends by reducing noise from seasonal variations
+SELECT
+    month_,
+    total_sales,
+    ROUND(AVG(total_sales) OVER (ORDER BY month_ ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)) AS rolling_average 
+FROM (
+    SELECT
+        DATE_TRUNC('month', order_date)::date AS month_,
+        SUM(sales_amount) AS total_sales
+    FROM gold.fact_sales
+    WHERE order_date IS NOT NULL
+    GROUP BY month_
+)t;
+
+/*
+===========================================================================================================
+SECTION 2: CUMULATIVE ANALYSIS
+===========================================================================================================
+Purpose: Track running totals and lifetime value metrics
+*/
+
+-- Running Total Revenue by Customer
+-- Show each customer's cumulative spending over their lifetime, ordered by transaction date
+-- Business use: Track customer lifetime value (CLV) progression and identify high-value customers
+SELECT
+    f.order_date,
+    c.customer_key,
+    c.first_name || ' ' || c.last_name AS customer_name,
+    f.sales_amount,
+    SUM(f.sales_amount) OVER (
+        PARTITION BY c.customer_key, c.first_name || ' ' || c.last_name 
+        ORDER BY f.order_date
+    ) AS cummulative_total_revenue
+FROM gold.fact_sales f
+    LEFT JOIN gold.dim_customers c
+        ON f.customer_key = c.customer_key
+WHERE order_date IS NOT NULL;
+
+-- Cumulative Product Sales Achievement
+-- Track cumulative units sold for each product and identify when they hit milestones
+-- Business use: Identify product momentum and celebrate milestone achievements
+WITH cumm_total AS (
+    SELECT
+        product_key,
+        product_name,
+        order_date,
+        quantity,
+        cumm_total_units,
+        LAG(cumm_total_units, 1, 0) OVER (PARTITION BY product_key ORDER BY order_date) AS prev_cumm_total
+    FROM (
+        SELECT
+            p.product_key,
+            p.product_name,
+            f.quantity,
+            f.order_date,
+            SUM(f.quantity) OVER (PARTITION BY p.product_key ORDER BY f.order_date) AS cumm_total_units
+        FROM gold.fact_sales f
+            LEFT JOIN gold.dim_products p
+                ON f.product_key = p.product_key
+        WHERE order_date IS NOT NULL
+    ) sub
+)
+SELECT
+    *,
+    CASE 
+        WHEN cumm_total_units >= 4000 AND prev_cumm_total < 4000 THEN '4000 units milestone reached'
+        WHEN cumm_total_units >= 3500 AND prev_cumm_total < 3500 THEN '3500 units milestone reached'
+        WHEN cumm_total_units >= 3000 AND prev_cumm_total < 3000 THEN '3000 units milestone reached'
+        WHEN cumm_total_units >= 2500 AND prev_cumm_total < 2500 THEN '2500 units milestone reached'
+        WHEN cumm_total_units >= 2000 AND prev_cumm_total < 2000 THEN '2000 units milestone reached'
+        WHEN cumm_total_units >= 1500 AND prev_cumm_total < 1500 THEN '1500 units milestone reached'
+        WHEN cumm_total_units >= 1000 AND prev_cumm_total < 1000 THEN '1000 units milestone reached'
+        WHEN cumm_total_units >= 500 AND prev_cumm_total < 500 THEN '500 units milestone reached'
+        WHEN cumm_total_units >= 100 AND prev_cumm_total < 100 THEN '100 units milestone reached'
+        ELSE NULL
+    END AS milestone
+FROM cumm_total;
+
+-- Monthly Revenue with Running Total
+-- Calculate total revenue per month and running total of revenue over time
+-- Business use: Track cumulative business growth and revenue trajectory
+SELECT
+    order_date,
+    total_revenue,
+    SUM(total_revenue) OVER (ORDER BY order_date) AS running_total_rev
+FROM (
+    SELECT
+        DATE_TRUNC('month', order_date)::date AS order_date,
+        SUM(sales_amount) AS total_revenue
+    FROM gold.fact_sales
+    WHERE order_date IS NOT NULL
+    GROUP BY DATE_TRUNC('month', order_date)
+) t;
+
+/*
+===========================================================================================================
+SECTION 3: PERFORMANCE ANALYSIS
+===========================================================================================================
+Purpose: Benchmark performance and identify top/bottom performers
+*/
+
+-- Country Performance Benchmarking
+-- Compare each country's performance against the overall average
+-- Business use: Identify over/under performing markets for strategic resource allocation
+WITH country_perf AS (
+    SELECT
+        c.country,
+        SUM(f.sales_amount) AS total_sales
+    FROM gold.fact_sales f
+        LEFT JOIN gold.dim_customers c
+            ON f.customer_key = c.customer_key
+    GROUP BY c.country
+), 
+overall AS (
+    SELECT 
+        country,
+        total_sales,
+        ROUND(AVG(total_sales) OVER ()) AS overall_avg
+    FROM country_perf
+)
+SELECT 
+    *,
+    CASE
+        WHEN total_sales > overall_avg THEN 'Over performer'
+        WHEN total_sales < overall_avg THEN 'Under performer'
+    END AS performance_status
+FROM overall;
+
+-- Year-over-Year Product Performance Comparison
+-- Compare each product's sales performance year-over-year, showing growth or decline
+-- Business use: Identify product trends and portfolio optimization opportunities
+WITH product_yearly_rev AS (
+    SELECT
+        EXTRACT(YEAR FROM f.order_date) AS year_,
+        p.product_key,
+        p.product_name,
+        SUM(f.sales_amount) AS current_total_revenue
+    FROM gold.fact_sales f
+        LEFT JOIN gold.dim_products p
+            ON f.product_key = p.product_key
+    WHERE order_date IS NOT NULL
+    GROUP BY 
+        EXTRACT(YEAR FROM f.order_date),
+        p.product_key,
+        p.product_name
+),
+prev_total_rev AS (
+    SELECT
+        *,
+        LAG(current_total_revenue, 1) OVER (PARTITION BY product_name ORDER BY year_) AS prev_total_revenue
+    FROM product_yearly_rev
+)
+SELECT 
+    *,
+    ROUND(((current_total_revenue::numeric) - prev_total_revenue) / prev_total_revenue * 100, 2) AS product_growth_rate
+FROM prev_total_rev;
+
+/*
+===========================================================================================================
+SECTION 4: PART-TO-WHOLE ANALYSIS
+===========================================================================================================
+Purpose: Understand revenue composition and contribution percentages
+*/
+
+-- Revenue Contribution by Category (Pareto Analysis)
+-- Calculate each category's percentage of total revenue and identify top contributors
+-- Business use: Apply 80/20 rule to identify categories driving majority of revenue
+WITH category_revenue AS (
+    SELECT
+        p.category,
+        SUM(sales_amount) AS total_revenue
+    FROM gold.fact_sales f
+        LEFT JOIN gold.dim_products p 
+            ON p.product_key = f.product_key
+    GROUP BY category
+)
+SELECT
+    category,
+    total_revenue,
+    SUM(total_revenue) OVER () AS overall_revenue,
+    ROUND(total_revenue::numeric / SUM(total_revenue) OVER () * 100, 2) AS revenue_share,
+	ROUND(100 * SUM(total_revenue) OVER (ORDER BY total_revenue DESC)/ 
+			SUM(total_revenue) OVER (),2) AS cumulative_share
+FROM category_revenue
+ORDER BY revenue_share DESC;
+
+-- Gender-Based Purchase Distribution
+-- Analyze how total sales are distributed across gender demographics
+-- Business use: Understand customer demographics for targeted marketing
+WITH gender_ttl_sales AS (
+    SELECT
+        c.gender,
+        SUM(f.sales_amount) AS total_sales
+    FROM gold.fact_sales f
+        LEFT JOIN gold.dim_customers c
+            ON f.customer_key = c.customer_key
+    GROUP BY gender
+)
+SELECT
+    gender,
+    total_sales,
+    SUM(total_sales) OVER () AS overall_revenue,
+    ROUND(total_sales::numeric / SUM(total_sales) OVER () * 100, 2) AS revenue_share
+FROM gender_ttl_sales;
+
+-- Category Contribution to Overall Sales
+-- Identify which categories contribute the most to overall sales
+-- Business use: Strategic focus on high-performing product lines
+WITH category_ttl_sales AS (
+    SELECT
+        p.category,
+        SUM(f.sales_amount) AS total_sales
+    FROM gold.fact_sales f
+        LEFT JOIN gold.dim_products p
+            ON f.product_key = p.product_key
+    GROUP BY category
+)
+SELECT
+    category,
+    total_sales,
+    SUM(total_sales) OVER () AS overall_revenue,
+    ROUND(total_sales::numeric / SUM(total_sales) OVER () * 100, 2) AS revenue_share
+FROM category_ttl_sales
+ORDER BY revenue_share DESC;
+
+/*
+===========================================================================================================
+SECTION 5: DATA SEGMENTATION ANALYSIS
+===========================================================================================================
+Purpose: Segment customers and products for targeted strategies
+*/
+
+-- Customer Age Group Analysis
+-- Segment customers by age groups and analyze purchasing patterns across generations
+-- Business use: Tailor marketing campaigns to specific age demographics
+SELECT
+    CASE
+	    WHEN customer_age < 20 THEN 'Under 20'
+        WHEN customer_age BETWEEN 20 AND 29 THEN '20-29'
+        WHEN customer_age BETWEEN 30 AND 39 THEN '30-39'
+        WHEN customer_age BETWEEN 40 AND 49 THEN '40-49'
+        ELSE '50 and above'
+    END AS age_group,
+    SUM(sales_amount) AS total_spending 
+FROM (
+    SELECT 
+        c.customer_key,
+        c.first_name || ' ' || c.last_name AS customer,
+        EXTRACT(YEAR FROM AGE(CURRENT_DATE, c.birthdate)) AS customer_age,
+        f.sales_amount
+    FROM gold.fact_sales f
+        LEFT JOIN gold.dim_customers c
+            ON c.customer_key = f.customer_key
+) t
+GROUP BY age_group
+ORDER BY total_spending DESC;
+
+-- Product Cost Range Segmentation
+-- Segment products into cost ranges and count how many products fall into each segment
+-- Business use: Understand product portfolio distribution and pricing strategy
+WITH product_segments AS (
+    SELECT
+        product_key,
+        product_name,
+        cost,
+        CASE
+            WHEN cost < 100 THEN 'Below 100'
+            WHEN cost BETWEEN 100 AND 500 THEN '100-500'
+            WHEN cost BETWEEN 500 AND 1000 THEN '500-1000'
+            ELSE 'Above 1000'
+        END AS cost_range
+    FROM gold.dim_products
+)
+SELECT
+    cost_range,
+    COUNT(product_key) AS total_products
+FROM product_segments
+GROUP BY cost_range
+ORDER BY 
+    CASE cost_range
+        WHEN 'Below 100' THEN 1
+        WHEN '100-500' THEN 2
+        WHEN '500-1000' THEN 3
+        WHEN 'Above 1000' THEN 4
+    END;
+
+-- Customer Segmentation by Spending Behavior
+-- Group customers into VIP, Regular, and New segments based on spending and tenure
+-- Business use: Implement tiered customer loyalty programs and retention strategies
+/*
+Segmentation Rules:
+- VIP: 12+ months history AND spending > $5,000
+- Regular: 12+ months history AND spending ≤ $5,000
+- New: Less than 12 months history
+*/
+WITH customer_spending AS (
+    SELECT
+        c.customer_key,
+        SUM(f.sales_amount) AS total_spending,
+        MIN(order_date) AS first_order,
+        MAX(order_date) AS last_order,
+        (EXTRACT(YEAR FROM AGE(MAX(order_date), MIN(order_date))) * 12 +
+         EXTRACT(MONTH FROM AGE(MAX(order_date), MIN(order_date)))) AS lifespan
+    FROM gold.fact_sales f
+        LEFT JOIN gold.dim_customers c
+            ON f.customer_key = c.customer_key
+    GROUP BY c.customer_key
+), 
+customer_segments AS (
+    SELECT 
+        customer_key,
+        total_spending,
+        lifespan,
+        CASE 
+            WHEN lifespan >= 12 AND total_spending > 5000 THEN 'VIP'
+            WHEN lifespan >= 12 AND total_spending <= 5000 THEN 'Regular'
+            ELSE 'New'
+        END AS customer_segment
+    FROM customer_spending 
+)
+SELECT 
+    customer_segment,
+    COUNT(customer_segment) AS total_customers
+FROM customer_segments
+GROUP BY customer_segment
+ORDER BY total_customers ASC;
+
