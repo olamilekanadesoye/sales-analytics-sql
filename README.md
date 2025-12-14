@@ -31,7 +31,7 @@ This project demonstrates end-to-end SQL analytics capabilities on a sales data 
 
 ---
 
-## 📊 Dataset
+## Dataset
 
 ### **Source**
 Retail sales data warehouse (Gold layer) with star schema architecture by Barra Khatib
@@ -130,7 +130,7 @@ sales-analytics-sql/
 
 ---
 
-## 🔍 Key Analyses
+## Key Analyses
 
 ### 1. **Exploratory Data Analysis**
 
@@ -207,7 +207,7 @@ sales-analytics-sql/
 
 ---
 
-## 🛠️ Technical Skills Demonstrated
+## Technical Skills Demonstrated
 
 ### **SQL Techniques**
 - Window Functions 
@@ -294,5 +294,5 @@ LinkedIn: [linkedin.com/in/myprofile](https://www.linkedin.com/public-profile/se
 ---
 
 **Last Updated:** December 2024  
-**Status:** ✅ Complete  
+**Status:** Completed 
 **Version:** 1.0
